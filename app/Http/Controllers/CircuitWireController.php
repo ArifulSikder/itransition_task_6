@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\BroadcastCircuitState;
 use App\Actions\BumpCircuitRevision;
 use App\Http\Requests\StoreCircuitWireRequest;
 use App\Http\Resources\CircuitWireResource;
@@ -26,6 +27,8 @@ class CircuitWireController extends Controller
 
         $wire->load(['fromNode', 'toNode']);
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
 
         return response()->json([
             ...CircuitWireResource::make($wire)->toArray($request),
@@ -40,6 +43,8 @@ class CircuitWireController extends Controller
     ): JsonResponse {
         $wire->delete();
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
 
         return response()->json(['revision' => $circuit->revision]);
     }

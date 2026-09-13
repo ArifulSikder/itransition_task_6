@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\BroadcastCircuitState;
 use App\Actions\JoinCircuit;
 use App\Http\Resources\CircuitNodeResource;
 use App\Http\Resources\CircuitPresenceResource;
@@ -13,9 +14,14 @@ use Illuminate\Http\Request;
 
 class CircuitSyncController extends Controller
 {
-    public function __invoke(Request $request, Circuit $circuit, JoinCircuit $joinCircuit): JsonResponse
+    public function __invoke(Request $request, Circuit $circuit, JoinCircuit $joinCircuit, BroadcastCircuitState $broadcastCircuitState): JsonResponse
     {
+        $wasLive = $this->participantIsLive($circuit, $this->participant($request));
         $joinCircuit->handle($circuit, $this->participant($request));
+
+        if (! $wasLive) {
+            $broadcastCircuitState->presence($circuit);
+        }
 
         $clientRevision = $request->integer('revision', -1);
 

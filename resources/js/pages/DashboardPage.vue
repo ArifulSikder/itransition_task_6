@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
+import echo from '../echo';
 
 async function request(url) {
     const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -32,20 +33,71 @@ const props = defineProps({
 
 const circuits = ref(props.circuits);
 const showForm = ref(false);
-let timer;
+
+function upsertCircuit(next) {
+    const index = circuits.value.findIndex((circuit) => circuit.uuid === next.uuid);
+
+    if (index === -1) {
+        circuits.value = [next, ...circuits.value];
+        return;
+    }
+
+    circuits.value.splice(index, 1, { ...circuits.value[index], ...next });
+}
+
+function applyDirectory(event) {
+    if (event.action === 'deleted' && event.uuid) {
+        circuits.value = circuits.value.filter((circuit) => circuit.uuid !== event.uuid);
+        return;
+    }
+
+    if (event.circuit) {
+        upsertCircuit(event.circuit);
+    }
+}
+
+function applyPresence(event) {
+    const index = circuits.value.findIndex((circuit) => circuit.uuid === event.uuid);
+
+    if (index === -1) {
+        return;
+    }
+
+    circuits.value.splice(index, 1, {
+        ...circuits.value[index],
+        live_count: event.live_count,
+        presences: event.presences,
+    });
+}
+
+async function refreshList() {
+    try {
+        circuits.value = await request(props.listUrl);
+    } catch {
+        // keep the last list
+    }
+}
 
 onMounted(() => {
-    timer = setInterval(async () => {
-        try {
-            circuits.value = await request(props.listUrl);
-        } catch {
-            // keep the last list
+    if (!echo) {
+        return;
+    }
+
+    echo.private('dashboard')
+        .listen('.circuit.directory', applyDirectory)
+        .listen('.circuit.presence', applyPresence);
+
+    let seenConnection = false;
+    echo.connector.pusher.connection.bind('connected', () => {
+        if (seenConnection) {
+            refreshList();
         }
-    }, 2000);
+        seenConnection = true;
+    });
 });
 
 onUnmounted(() => {
-    clearInterval(timer);
+    echo?.leave('dashboard');
 });
 </script>
 

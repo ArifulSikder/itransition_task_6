@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\BroadcastCircuitState;
 use App\Actions\BumpCircuitRevision;
 use App\Enums\GateType;
 use App\Http\Requests\StoreCircuitNodeRequest;
@@ -30,6 +31,8 @@ class CircuitNodeController extends Controller
         ]);
 
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
 
         return response()->json([
             ...CircuitNodeResource::make($node)->toArray($request),
@@ -53,6 +56,8 @@ class CircuitNodeController extends Controller
         $node->save();
 
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
 
         return response()->json([
             ...CircuitNodeResource::make($node)->toArray($request),
@@ -67,6 +72,8 @@ class CircuitNodeController extends Controller
     ): JsonResponse {
         $node->delete();
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
 
         return response()->json(['revision' => $circuit->revision]);
     }

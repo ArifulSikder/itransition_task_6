@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\CircuitResource;
 use App\Models\Circuit;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -24,18 +25,7 @@ class DashboardController extends Controller
             'title' => 'Circuits',
             'pageProps' => [
                 'participantName' => $participant->name,
-                'circuits' => $circuits->map(fn (Circuit $circuit): array => [
-                    'uuid' => $circuit->uuid,
-                    'name' => $circuit->name,
-                    'grid_size' => $circuit->grid_size,
-                    'url' => route('circuits.show', $circuit),
-                    'node_count' => $circuit->nodes_count,
-                    'live_count' => $circuit->live_presences_count,
-                    'presences' => $circuit->livePresences->map(fn ($presence): array => [
-                        'name' => $presence->participant->name,
-                        'color' => $presence->color,
-                    ])->values(),
-                ])->values(),
+                'circuits' => CircuitResource::collection($circuits)->resolve(),
                 'gridSizes' => config('circuits.grid_sizes'),
                 'defaultGridSize' => config('circuits.default_grid_size'),
                 'storeUrl' => route('circuits.store'),

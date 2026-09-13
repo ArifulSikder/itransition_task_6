@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
+import './echo';
 import DashboardPage from './pages/DashboardPage.vue';
 import EditorPage from './pages/EditorPage.vue';
 import HomePage from './pages/HomePage.vue';

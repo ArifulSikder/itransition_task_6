@@ -25,6 +25,21 @@ class Participant extends Model
         return ['uuid'];
     }
 
+    public function getAuthIdentifierName(): string
+    {
+        return 'uuid';
+    }
+
+    public function getAuthIdentifier(): mixed
+    {
+        return $this->uuid;
+    }
+
+    public function getAuthIdentifierForBroadcasting(): mixed
+    {
+        return $this->uuid;
+    }
+
     /**
      * @return array<string, string>
      */

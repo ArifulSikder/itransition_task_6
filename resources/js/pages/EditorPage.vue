@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import echo from '../echo';
 
 const two = { w: 80, h: 56, inputs: [{ x: 0, y: 16 }, { x: 0, y: 40 }], outputs: [{ x: 80, y: 28 }] };
 const GATES = {
@@ -439,18 +440,47 @@ function onWheel(event) {
 }
 
 let lastCursor = 0;
+let channel;
+const myColor = presence.value.find((person) => person.participant_uuid === me.uuid)?.color;
 
-async function sendCursor(x, y) {
+function applyCursor(payload) {
+    if (!payload?.participant_uuid || payload.participant_uuid === me.uuid) {
+        return;
+    }
+
+    const index = presence.value.findIndex((person) => person.participant_uuid === payload.participant_uuid);
+
+    if (index === -1) {
+        presence.value = [...presence.value, payload];
+        return;
+    }
+
+    presence.value.splice(index, 1, { ...presence.value[index], ...payload });
+}
+
+function applyPresence(list) {
+    const current = Object.fromEntries(presence.value.map((person) => [person.participant_uuid, person]));
+
+    presence.value = (list ?? []).map((person) => ({
+        ...person,
+        cursor_x: person.cursor_x ?? current[person.participant_uuid]?.cursor_x ?? null,
+        cursor_y: person.cursor_y ?? current[person.participant_uuid]?.cursor_y ?? null,
+    }));
+}
+
+function sendCursor(x, y) {
     const now = Date.now();
     if (now - lastCursor < 150) {
         return;
     }
     lastCursor = now;
-    try {
-        await request(routes.presence, { method: 'PATCH', body: { cursor_x: Math.round(x), cursor_y: Math.round(y) } });
-    } catch {
-        // ignore
-    }
+    channel?.whisper('cursor', {
+        participant_uuid: me.uuid,
+        name: me.name,
+        color: myColor,
+        cursor_x: Math.round(x),
+        cursor_y: Math.round(y),
+    });
 }
 
 function applySnapshot(payload) {
@@ -464,7 +494,7 @@ function applySnapshot(payload) {
     }
 
     if (payload.presence) {
-        presence.value = payload.presence;
+        applyPresence(payload.presence);
     }
 
     if (payload.unchanged) {
@@ -491,7 +521,7 @@ function applySnapshot(payload) {
     }
 }
 
-async function poll() {
+async function refreshSnapshot() {
     try {
         applySnapshot(await request(`${routes.sync}?revision=${circuit.revision}`));
     } catch {
@@ -555,10 +585,34 @@ function onKey(event) {
     }
 }
 
-let timer;
+let heartbeat;
 
 onMounted(() => {
-    timer = setInterval(poll, 400);
+    if (echo) {
+        channel = echo.join(`circuit.${circuit.uuid}`)
+            .listen('.circuit.board', applySnapshot)
+            .listen('.circuit.presence', (event) => applyPresence(event.presences))
+            .listen('.circuit.cursor', applyCursor)
+            .listen('.circuit.directory', (event) => {
+                if (event.action === 'deleted') {
+                    window.location.href = routes.dashboard;
+                }
+            })
+            .listenForWhisper('cursor', applyCursor);
+
+        let seenConnection = false;
+        echo.connector.pusher.connection.bind('connected', () => {
+            if (seenConnection) {
+                refreshSnapshot();
+            }
+            seenConnection = true;
+        });
+    }
+
+    heartbeat = setInterval(() => {
+        request(routes.presence, { method: 'PATCH', body: {} }).catch(() => {});
+    }, props.boot.heartbeatMs ?? 10000);
+
     window.addEventListener('keydown', onKey);
     window.addEventListener('pagehide', () => {
         fetch(routes.leave, {
@@ -574,7 +628,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-    clearInterval(timer);
+    clearInterval(heartbeat);
+    echo?.leave(`circuit.${circuit.uuid}`);
     window.removeEventListener('keydown', onKey);
 });
 </script>

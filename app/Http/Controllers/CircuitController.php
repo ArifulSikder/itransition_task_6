@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\BroadcastCircuitState;
 use App\Actions\BumpCircuitRevision;
 use App\Actions\JoinCircuit;
 use App\Http\Requests\StoreCircuitRequest;
@@ -38,6 +39,8 @@ class CircuitController extends Controller
             'participant_id' => $participant->id,
         ]);
 
+        app(BroadcastCircuitState::class)->directory($circuit, 'created');
+
         if ($request->expectsJson()) {
             $circuit->load(['creator', 'livePresences.participant'])->loadCount(['nodes', 'livePresences']);
 
@@ -49,9 +52,14 @@ class CircuitController extends Controller
         return redirect()->route('circuits.show', $circuit);
     }
 
-    public function show(Request $request, Circuit $circuit, JoinCircuit $joinCircuit): View
+    public function show(Request $request, Circuit $circuit, JoinCircuit $joinCircuit, BroadcastCircuitState $broadcastCircuitState): View
     {
+        $wasLive = $this->participantIsLive($circuit, $this->participant($request));
         $joinCircuit->handle($circuit, $this->participant($request));
+
+        if (! $wasLive) {
+            $broadcastCircuitState->presence($circuit);
+        }
 
         $circuit->load([
             'creator',
@@ -110,6 +118,7 @@ class CircuitController extends Controller
                         'leave' => route('circuits.presence.destroy', $circuit),
                         'dashboard' => route('dashboard'),
                     ],
+                    'heartbeatMs' => ((int) config('circuits.heartbeat_seconds')) * 1000,
                 ],
                 'gridSizes' => config('circuits.grid_sizes'),
                 'canDelete' => $circuit->participant_id === $participant->id,
@@ -128,6 +137,9 @@ class CircuitController extends Controller
         $circuit->save();
 
         $bumpCircuitRevision->handle($circuit);
+        app(BroadcastCircuitState::class)->board($circuit);
+        app(BroadcastCircuitState::class)->directory($circuit);
+
         $circuit->load(['creator', 'livePresences.participant'])->loadCount(['nodes', 'livePresences']);
 
         return CircuitResource::make($circuit);
@@ -137,7 +149,9 @@ class CircuitController extends Controller
     {
         abort_unless($circuit->participant_id === $this->participant($request)->id, 403);
 
+        $uuid = $circuit->uuid;
         $circuit->delete();
+        app(BroadcastCircuitState::class)->deleted($uuid);
 
         if ($request->expectsJson()) {
             return response()->json(status: 204);
